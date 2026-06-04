@@ -181,16 +181,16 @@ class RenderWidget(QWidget):
 
     def _build_jet_ctf(self):
         """Build a jet-like color transfer function."""
-        colors = [
-            (0.0, 0.0, 0.5625),      # blue
-            (0.25, 0.0, 1.0),        # cyan
-            (0.5, 0.0, 1.0),         # green
-            (0.5, 1.0, 0.0),
-            (0.75, 1.0, 1.0, 0.0),   # yellow
-            (1.0, 1.0, 0.0, 0.0),    # red
+        # Build a jet-like color map: blue → cyan → green → yellow → red
+        points = [
+            (0.00, 0.0, 0.0, 0.5625),  # blue
+            (0.25, 0.0, 1.0, 1.0),      # cyan
+            (0.50, 0.0, 1.0, 0.0),      # green
+            (0.75, 1.0, 1.0, 0.0),      # yellow
+            (1.00, 1.0, 0.0, 0.0),      # red
         ]
         self._ctf.RemoveAllPoints()
-        for v, r, g, b in colors:
+        for v, r, g, b in points:
             self._ctf.AddRGBPoint(v, r, g, b)
 
     def _field_range(self):
