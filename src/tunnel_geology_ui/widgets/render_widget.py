@@ -113,6 +113,60 @@ class RenderWidget(QWidget):
         self._renderer.AddActor(self._tunnel_actor)
         self._render()
 
+    def build_isosurface(self, iso_value: float | None = None):
+        """Build and display an isosurface. Slow on large grids — runs on main thread."""
+        if self._model is None:
+            return
+        if self._iso_actor:
+            self._renderer.RemoveActor(self._iso_actor)
+            self._iso_actor = None
+
+        arr = self._model.field(self._current_field)
+        if iso_value is None:
+            vmin, vmax = self._field_range()
+            iso_value = vmin + 0.7 * (vmax - vmin)
+
+        # Convert to VTK image (nz, ny, nx) order
+        data = np.ascontiguousarray(
+            arr.transpose(2, 0, 1).astype(np.float32)
+        )
+        importer = vtk.vtkImageImport()
+        importer.CopyImportVoidPointer(data.tobytes(), data.nbytes)
+        importer.SetDataScalarTypeToFloat()
+        importer.SetNumberOfScalarComponents(1)
+        importer.SetWholeExtent(0, self._model.nx - 1, 0, self._model.ny - 1,
+                                0, self._model.nz - 1)
+        importer.SetDataExtent(0, self._model.nx - 1, 0, self._model.ny - 1,
+                               0, self._model.nz - 1)
+        importer.Update()
+
+        img = importer.GetOutput()
+        img.SetOrigin(self._model.x_range[0], self._model.y_range[0], self._model.z_range[0])
+        img.SetSpacing(self._model.grid_step, self._model.grid_step, self._model.grid_step)
+
+        mc = vtk.vtkMarchingCubes()
+        mc.SetInputData(img)
+        mc.SetValue(0, iso_value)
+        mc.ComputeNormalsOn()
+        mc.Update()
+
+        mapper = vtk.vtkPolyDataMapper()
+        mapper.SetInputConnection(mc.GetOutputPort())
+        mapper.ScalarVisibilityOff()
+
+        self._iso_actor = vtk.vtkActor()
+        self._iso_actor.SetMapper(mapper)
+        self._iso_actor.GetProperty().SetColor(1.0, 0.8, 0.3)
+        self._iso_actor.GetProperty().SetOpacity(0.6)
+        self._renderer.AddActor(self._iso_actor)
+        self._render()
+
+    def clear_isosurface(self):
+        if self._iso_actor:
+            self._renderer.RemoveActor(self._iso_actor)
+            self._iso_actor = None
+            self._render()
+
     def reset_camera(self):
         self._renderer.ResetCamera()
         self._render()

@@ -55,6 +55,8 @@ class MainWindow(QMainWindow):
         self._slice_panel.slice_moved.connect(self._on_slice_moved)
         self._tunnel_panel.tunnel_built.connect(self._on_tunnel_built)
         self._tunnel_panel.coupling_computed.connect(self._on_coupling_computed)
+        self._slice_panel.isosurface_requested.connect(self._render.build_isosurface)
+        self._slice_panel.isosurface_clear.connect(self._render.clear_isosurface)
 
         # ── Dock widgets ──
         self._add_dock(self._data_panel, "📁 Data", Qt.DockWidgetArea.LeftDockWidgetArea)
