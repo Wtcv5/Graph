@@ -6,19 +6,20 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from PySide6.QtWidgets import QWidget, QVBoxLayout
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal
 
 import vtk
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
 if TYPE_CHECKING:
     from tunnel_geology_model import GeologicalModel
+    from tunnel_geology_model.tunnel import ParametricTunnel
 
 
 class RenderWidget(QWidget):
     """Central 3D view with VTK renderer."""
 
-    probe_changed = Signal(float, float, float, dict)  # x, y, z, field_values
+    probe_changed = Signal(float, float, float, dict)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -28,39 +29,39 @@ class RenderWidget(QWidget):
         self._slice_y_idx = 0
         self._slice_z_idx = 0
 
-        # ── Layout ──
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # ── VTK widget ──
+        # VTK widget
         self._vtk_widget = QVTKRenderWindowInteractor(self)
         layout.addWidget(self._vtk_widget)
 
-        # ── VTK pipeline ──
+        # Renderer
         self._renderer = vtk.vtkRenderer()
         self._renderer.SetBackground(0.15, 0.15, 0.18)
         self._renderer.SetBackground2(0.08, 0.08, 0.10)
         self._renderer.GradientBackgroundOn()
         self._vtk_widget.GetRenderWindow().AddRenderer(self._renderer)
 
+        # Interactor
         self._interactor = self._vtk_widget.GetRenderWindow().GetInteractor()
         style = vtk.vtkInteractorStyleTrackballCamera()
         self._interactor.SetInteractorStyle(style)
+        self._interactor.Initialize()
 
-        # Actors (created lazily)
+        # Color LUT
+        self._lut = vtk.vtkLookupTable()
+        self._build_lut()
+
+        # Actors
         self._outline_actor: vtk.vtkActor | None = None
         self._slice_x_actor: vtk.vtkImageActor | None = None
         self._slice_y_actor: vtk.vtkImageActor | None = None
         self._slice_z_actor: vtk.vtkImageActor | None = None
         self._iso_actor: vtk.vtkActor | None = None
         self._tunnel_actor: vtk.vtkActor | None = None
-        self._axes_actor: vtk.vtkAxesActor | None = None
 
-        # Color transfer function
-        self._ctf = vtk.vtkColorTransferFunction()
-        self._build_jet_ctf()
-
-        # ── Probe picker ──
+        # Probe
         self._picker = vtk.vtkPointPicker()
         self._picker.AddObserver("EndPickEvent", self._on_pick)
         self._interactor.SetPicker(self._picker)
@@ -72,7 +73,7 @@ class RenderWidget(QWidget):
 
     # ── public API ──────────────────────────────────────
 
-    def set_model(self, model: "GeologicalModel", field_name: str | None = None):
+    def set_model(self, model: GeologicalModel, field_name: str | None = None):
         self._model = model
         if field_name:
             self._current_field = field_name
@@ -85,71 +86,40 @@ class RenderWidget(QWidget):
         self._current_field = field_name
         if self._model:
             self._update_slices()
-            self._update_isosurface()
 
     def set_slice(self, axis: str, index: int):
         if axis == "x":
             self._slice_x_idx = index
-            self._update_slice_x()
+            self._rebuild_slice_actor("x")
         elif axis == "y":
             self._slice_y_idx = index
-            self._update_slice_y()
+            self._rebuild_slice_actor("y")
         elif axis == "z":
             self._slice_z_idx = index
-            self._update_slice_z()
+            self._rebuild_slice_actor("z")
+        self._render()
 
-    def reset_camera(self):
-        self._renderer.ResetCamera()
-        self._vtk_widget.GetRenderWindow().Render()
-
-    def set_tunnel(self, tunnel: "ParametricTunnel | None"):
-        """Display or hide a tunnel 3D mesh overlay."""
+    def set_tunnel(self, tunnel: ParametricTunnel | None):
         if self._tunnel_actor:
             self._renderer.RemoveActor(self._tunnel_actor)
             self._tunnel_actor = None
-
         if tunnel is None or tunnel.vertices is None or tunnel.faces is None:
-            self._vtk_widget.GetRenderWindow().Render()
+            self._render()
             return
-
-        # Convert numpy arrays to VTK polydata
-        verts = tunnel.vertices  # (N, 3)
-        faces = tunnel.faces      # (M, 3)
-
-        vtk_points = vtk.vtkPoints()
-        vtk_points.SetData(vtk.vtkFloatArray())
-        for i, v in enumerate(verts):
-            vtk_points.InsertNextPoint(v[0], v[1], v[2])
-
-        vtk_cells = vtk.vtkCellArray()
-        for f in faces:
-            triangle = vtk.vtkTriangle()
-            triangle.GetPointIds().SetId(0, int(f[0]))
-            triangle.GetPointIds().SetId(1, int(f[1]))
-            triangle.GetPointIds().SetId(2, int(f[2]))
-            vtk_cells.InsertNextCell(triangle)
-
-        polydata = vtk.vtkPolyData()
-        polydata.SetPoints(vtk_points)
-        polydata.SetPolys(vtk_cells)
-
-        mapper = vtk.vtkPolyDataMapper()
-        mapper.SetInputData(polydata)
-
-        self._tunnel_actor = vtk.vtkActor()
-        self._tunnel_actor.SetMapper(mapper)
-        self._tunnel_actor.GetProperty().SetColor(0.85, 0.65, 0.4)
-        self._tunnel_actor.GetProperty().SetOpacity(0.7)
-        self._tunnel_actor.GetProperty().SetEdgeVisibility(True)
-        self._tunnel_actor.GetProperty().SetEdgeColor(0.3, 0.3, 0.3)
-        self._tunnel_actor.GetProperty().SetLineWidth(0.5)
-
+        self._tunnel_actor = self._build_poly_actor(
+            tunnel.vertices, tunnel.faces,
+            color=(0.85, 0.65, 0.4), opacity=0.7, edge_visible=True,
+        )
         self._renderer.AddActor(self._tunnel_actor)
-        self._vtk_widget.GetRenderWindow().Render()
+        self._render()
+
+    def reset_camera(self):
+        self._renderer.ResetCamera()
+        self._render()
 
     def set_view(self, direction: str):
         cam = self._renderer.GetActiveCamera()
-        center = np.array(self._renderer.GetActiveCamera().GetFocalPoint())
+        center = np.array(cam.GetFocalPoint())
         dist = cam.GetDistance()
         if direction == "+Z":
             cam.SetPosition(center[0], center[1], center[2] + dist)
@@ -161,37 +131,156 @@ class RenderWidget(QWidget):
             cam.SetPosition(center[0] - dist, center[1], center[2])
             cam.SetViewUp(0, 0, 1)
         self._renderer.ResetCameraClippingRange()
-        self._vtk_widget.GetRenderWindow().Render()
+        self._render()
 
-    # ── internal build ──────────────────────────────────
+    # ── rebuild ─────────────────────────────────────────
 
     def _rebuild(self):
-        self._clear_actors()
-        self._build_outline()
-        self._build_slices()
-        self._build_isosurface()
+        for a in [self._outline_actor, self._slice_x_actor, self._slice_y_actor,
+                   self._slice_z_actor, self._iso_actor, self._tunnel_actor]:
+            if a:
+                self._renderer.RemoveActor(a)
+        self._outline_actor = self._build_outline()
+        self._slice_x_actor = self._build_slice("x", self._slice_x_idx)
+        self._slice_y_actor = self._build_slice("y", self._slice_y_idx)
+        self._slice_z_actor = self._build_slice("z", self._slice_z_idx)
+        # Skip isosurface on initial load to avoid hang on large data
+        self._iso_actor = None
         self._renderer.ResetCamera()
-        self._vtk_widget.GetRenderWindow().Render()
+        self._render()
 
-    def _clear_actors(self):
-        for actor in [self._outline_actor, self._slice_x_actor,
-                       self._slice_y_actor, self._slice_z_actor, self._iso_actor]:
-            if actor:
-                self._renderer.RemoveActor(actor)
+    def _update_slices(self):
+        for a in [self._slice_x_actor, self._slice_y_actor, self._slice_z_actor]:
+            if a:
+                self._renderer.RemoveActor(a)
+        self._slice_x_actor = self._build_slice("x", self._slice_x_idx)
+        self._slice_y_actor = self._build_slice("y", self._slice_y_idx)
+        self._slice_z_actor = self._build_slice("z", self._slice_z_idx)
+        self._render()
 
-    def _build_jet_ctf(self):
-        """Build a jet-like color transfer function."""
-        # Build a jet-like color map: blue → cyan → green → yellow → red
-        points = [
-            (0.00, 0.0, 0.0, 0.5625),  # blue
-            (0.25, 0.0, 1.0, 1.0),      # cyan
-            (0.50, 0.0, 1.0, 0.0),      # green
-            (0.75, 1.0, 1.0, 0.0),      # yellow
-            (1.00, 1.0, 0.0, 0.0),      # red
-        ]
-        self._ctf.RemoveAllPoints()
-        for v, r, g, b in points:
-            self._ctf.AddRGBPoint(v, r, g, b)
+    def _rebuild_slice_actor(self, axis: str):
+        attr = f"_slice_{axis}_actor"
+        idx_attr = f"_slice_{axis}_idx"
+        old = getattr(self, attr)
+        if old:
+            self._renderer.RemoveActor(old)
+        new_actor = self._build_slice(axis, getattr(self, idx_attr))
+        setattr(self, attr, new_actor)
+
+    # ── actors ──────────────────────────────────────────
+
+    def _build_outline(self) -> vtk.vtkActor:
+        m = self._model
+        cube = vtk.vtkCubeSource()
+        cube.SetBounds(m.x_range[0], m.x_range[1], m.y_range[0], m.y_range[1],
+                       m.z_range[0], m.z_range[1])
+        mapper = vtk.vtkPolyDataMapper()
+        mapper.SetInputConnection(cube.GetOutputPort())
+        actor = vtk.vtkActor()
+        actor.SetMapper(mapper)
+        actor.GetProperty().SetRepresentationToWireframe()
+        actor.GetProperty().SetColor(0.4, 0.4, 0.4)
+        self._renderer.AddActor(actor)
+        return actor
+
+    def _build_slice(self, axis: str, idx: int) -> vtk.vtkImageActor:
+        m = self._model
+        arr = m.field(self._current_field)
+
+        if axis == "x":
+            idx = min(idx, m.nx - 1)
+            data_2d = arr[:, idx, :].copy()   # (ny, nz)
+            ox, oy, oz = float(m.x[idx]), m.y_range[0], m.z_range[0]
+            sx, sy, sz = 1.0, m.grid_step, m.grid_step
+        elif axis == "y":
+            idx = min(idx, m.ny - 1)
+            data_2d = arr[idx, :, :].copy()   # (nx, nz) — needs transpose to XZ
+            ox, oy, oz = m.x_range[0], float(m.y[idx]), m.z_range[0]
+            sx, sy, sz = m.grid_step, 1.0, m.grid_step
+        else:  # z
+            idx = min(idx, m.nz - 1)
+            data_2d = arr[:, :, idx].copy()   # (ny, nx) — needs transpose to XY
+            ox, oy, oz = m.x_range[0], m.y_range[0], float(m.z[idx])
+            sx, sy, sz = m.grid_step, m.grid_step, 1.0
+
+        img = self._array_to_vtk_image(data_2d)
+        img.SetOrigin(ox, oy, oz)
+        img.SetSpacing(sx, sy, sz)
+        actor = self._color_map_actor(img)
+        self._renderer.AddActor(actor)
+        return actor
+
+    def _build_poly_actor(self, vertices, faces, color, opacity, edge_visible):
+        vtk_pts = vtk.vtkPoints()
+        for v in vertices:
+            vtk_pts.InsertNextPoint(v[0], v[1], v[2])
+        vtk_cells = vtk.vtkCellArray()
+        for f in faces:
+            tri = vtk.vtkTriangle()
+            tri.GetPointIds().SetId(0, int(f[0]))
+            tri.GetPointIds().SetId(1, int(f[1]))
+            tri.GetPointIds().SetId(2, int(f[2]))
+            vtk_cells.InsertNextCell(tri)
+        pd = vtk.vtkPolyData()
+        pd.SetPoints(vtk_pts)
+        pd.SetPolys(vtk_cells)
+        mapper = vtk.vtkPolyDataMapper()
+        mapper.SetInputData(pd)
+        actor = vtk.vtkActor()
+        actor.SetMapper(mapper)
+        actor.GetProperty().SetColor(*color)
+        actor.GetProperty().SetOpacity(opacity)
+        if edge_visible:
+            actor.GetProperty().SetEdgeVisibility(True)
+            actor.GetProperty().SetEdgeColor(0.3, 0.3, 0.3)
+        return actor
+
+    # ── helpers ─────────────────────────────────────────
+
+    def _array_to_vtk_image(self, arr_2d: np.ndarray) -> vtk.vtkImageData:
+        """Safely convert a 2D numpy array (cols, rows) to vtkImageData."""
+        ny, nx = arr_2d.shape
+        data = np.ascontiguousarray(arr_2d.astype(np.float32))
+        # Use vtkImageImport for safe conversion
+        importer = vtk.vtkImageImport()
+        importer.CopyImportVoidPointer(data.tobytes(), data.nbytes)
+        importer.SetDataScalarTypeToFloat()
+        importer.SetNumberOfScalarComponents(1)
+        importer.SetWholeExtent(0, nx - 1, 0, ny - 1, 0, 0)
+        importer.SetDataExtent(0, nx - 1, 0, ny - 1, 0, 0)
+        importer.Update()
+        return importer.GetOutput()
+
+    def _color_map_actor(self, img: vtk.vtkImageData) -> vtk.vtkImageActor:
+        cmap = vtk.vtkImageMapToColors()
+        cmap.SetInputData(img)
+        cmap.SetLookupTable(self._lut)
+        cmap.SetOutputFormatToRGBA()
+        cmap.Update()
+        actor = vtk.vtkImageActor()
+        actor.GetMapper().SetInputConnection(cmap.GetOutputPort())
+        return actor
+
+    def _build_lut(self):
+        self._lut.SetNumberOfTableValues(256)
+        self._lut.Build()
+        for i in range(256):
+            t = i / 255.0
+            # Jet: blue→cyan→green→yellow→red
+            if t < 0.25:
+                r, g, b = 0.0, 4.0 * t, 1.0
+            elif t < 0.5:
+                r, g, b = 0.0, 1.0, 2.0 - 4.0 * t
+            elif t < 0.75:
+                r, g, b = 4.0 * t - 2.0, 1.0, 0.0
+            else:
+                r, g, b = 1.0, 4.0 - 4.0 * t, 0.0
+            self._lut.SetTableValue(i, r, g, b, 1.0)
+
+    def _update_lut_range(self):
+        vmin, vmax = self._field_range()
+        self._lut.SetRange(vmin, vmax)
+        self._lut.Build()
 
     def _field_range(self):
         if self._model is None:
@@ -199,169 +288,7 @@ class RenderWidget(QWidget):
         arr = self._model[self._current_field]
         return float(np.nanmin(arr)), float(np.nanmax(arr))
 
-    # ── outline ─────────────────────────────────────────
-
-    def _build_outline(self):
-        if self._model is None:
-            return
-        x0, x1 = self._model.x_range
-        y0, y1 = self._model.y_range
-        z0, z1 = self._model.z_range
-
-        cube = vtk.vtkCubeSource()
-        cube.SetBounds(x0, x1, y0, y1, z0, z1)
-        cube.Update()
-
-        mapper = vtk.vtkPolyDataMapper()
-        mapper.SetInputConnection(cube.GetOutputPort())
-
-        self._outline_actor = vtk.vtkActor()
-        self._outline_actor.SetMapper(mapper)
-        self._outline_actor.GetProperty().SetRepresentationToWireframe()
-        self._outline_actor.GetProperty().SetColor(0.4, 0.4, 0.4)
-        self._outline_actor.GetProperty().SetLineWidth(1)
-        self._renderer.AddActor(self._outline_actor)
-
-    # ── slices ──────────────────────────────────────────
-
-    def _build_slices(self):
-        if self._model is None:
-            return
-        self._rebuild_slice_x()
-        self._rebuild_slice_y()
-        self._rebuild_slice_z()
-
-    def _rebuild_slice_x(self):
-        if self._model is None:
-            return
-        arr = self._model.field(self._current_field)  # (ny, nx, nz)
-        nx = self._model.nx
-        idx = min(self._slice_x_idx, nx - 1)
-
-        # Extract slice: (ny, nz) at this X
-        img = self._numpy_to_vtk_image(arr[:, idx, :])  # (ny, nz)
-
-        # Position
-        x_pos = float(self._model.x[idx])
-        extent = img.GetExtent()
-        img.SetExtent(
-            0, 0,
-            int(self._model.y_range[0]), int(self._model.y_range[1]),
-            extent[4], extent[5],
-        )
-        # Use SetOrigin/SetSpacing instead
-        img.SetOrigin(x_pos, self._model.y_range[0], self._model.z_range[0])
-        img.SetSpacing(1.0, self._model.grid_step, self._model.grid_step)
-
-        # Reslice to XZ plane
-        reslice = vtk.vtkImageReslice()
-        reslice.SetInputData(img)
-        reslice.SetOutputDimensionality(2)
-        reslice.SetResliceAxesOrigin(x_pos, 0, 0)
-        axes = vtk.vtkMatrix4x4()
-        axes.Identity()
-        axes.SetElement(0, 0, 0); axes.SetElement(0, 2, 1)
-        axes.SetElement(2, 0, -1); axes.SetElement(2, 2, 0)
-        reslice.SetResliceAxes(axes)
-        reslice.Update()
-
-        self._slice_x_actor = self._create_image_actor(reslice.GetOutput())
-        self._renderer.AddActor(self._slice_x_actor)
-
-    def _update_slice_x(self):
-        self._rebuild_slice_x()
-        self._vtk_widget.GetRenderWindow().Render()
-
-    def _update_slice_y(self):
-        self._rebuild_slice_y()
-        self._vtk_widget.GetRenderWindow().Render()
-
-    def _update_slice_z(self):
-        self._rebuild_slice_z()
-        self._vtk_widget.GetRenderWindow().Render()
-
-    def _rebuild_slice_y(self):
-        if self._model is None:
-            return
-        arr = self._model.field(self._current_field)  # (ny, nx, nz)
-        ny = self._model.ny
-        idx = min(self._slice_y_idx, ny - 1)
-
-        img = self._numpy_to_vtk_image(arr[idx, :, :])  # (nx, nz)
-        y_pos = float(self._model.y[idx])
-        img.SetOrigin(self._model.x_range[0], y_pos, self._model.z_range[0])
-        img.SetSpacing(self._model.grid_step, 1.0, self._model.grid_step)
-
-        self._slice_y_actor = self._create_image_actor(img)
-        self._renderer.AddActor(self._slice_y_actor)
-
-    def _rebuild_slice_z(self):
-        if self._model is None:
-            return
-        arr = self._model.field(self._current_field)  # (ny, nx, nz)
-        nz = self._model.nz
-        idx = min(self._slice_z_idx, nz - 1)
-
-        # Extract Z slice: (ny, nx)
-        slice_data = arr[:, :, idx]  # (ny, nx)
-        z_pos = float(self._model.z[idx])
-
-        img = self._numpy_to_vtk_image(slice_data)
-        img.SetOrigin(self._model.x_range[0], self._model.y_range[0], z_pos)
-        img.SetSpacing(self._model.grid_step, self._model.grid_step, 1.0)
-
-        self._slice_z_actor = self._create_image_actor(img)
-        self._renderer.AddActor(self._slice_z_actor)
-
-    def _update_slices(self):
-        """Refresh all slices for new field."""
-        if self._slice_x_actor:
-            self._renderer.RemoveActor(self._slice_x_actor)
-        if self._slice_y_actor:
-            self._renderer.RemoveActor(self._slice_y_actor)
-        if self._slice_z_actor:
-            self._renderer.RemoveActor(self._slice_z_actor)
-        self._build_slices()
-        self._vtk_widget.GetRenderWindow().Render()
-
-    # ── isosurface ──────────────────────────────────────
-
-    def _build_isosurface(self):
-        if self._model is None:
-            return
-        arr = self._model.field(self._current_field)
-        vmin, vmax = self._field_range()
-        iso_value = vmin + 0.7 * (vmax - vmin)  # default threshold
-
-        # Convert numpy to VTK image data
-        vtk_img = self._numpy_to_vtk_image(arr.transpose(2, 0, 1))  # (nz, ny, nx)
-        vtk_img.SetOrigin(self._model.x_range[0], self._model.y_range[0], self._model.z_range[0])
-        vtk_img.SetSpacing(self._model.grid_step, self._model.grid_step, self._model.grid_step)
-
-        # Marching cubes
-        mc = vtk.vtkMarchingCubes()
-        mc.SetInputData(vtk_img)
-        mc.SetValue(0, iso_value)
-        mc.ComputeNormalsOn()
-        mc.Update()
-
-        mapper = vtk.vtkPolyDataMapper()
-        mapper.SetInputConnection(mc.GetOutputPort())
-        mapper.ScalarVisibilityOff()
-
-        self._iso_actor = vtk.vtkActor()
-        self._iso_actor.SetMapper(mapper)
-        self._iso_actor.GetProperty().SetColor(0.9, 0.6, 0.2)
-        self._iso_actor.GetProperty().SetOpacity(0.5)
-        self._renderer.AddActor(self._iso_actor)
-
-    def _update_isosurface(self):
-        if self._iso_actor:
-            self._renderer.RemoveActor(self._iso_actor)
-        self._build_isosurface()
-        self._vtk_widget.GetRenderWindow().Render()
-
-    # ── probe / pick ────────────────────────────────────
+    # ── probe ───────────────────────────────────────────
 
     def _on_pick(self, obj, event):
         picker = obj
@@ -369,63 +296,18 @@ class RenderWidget(QWidget):
             return
         pt = picker.GetPickPosition()
         x, y, z = pt
-        if self._model:
-            ix = int(np.argmin(np.abs(self._model.x - x)))
-            iy = int(np.argmin(np.abs(self._model.y - y)))
-            iz = int(np.argmin(np.abs(self._model.z - z)))
-            values = {}
-            for name in self._model.field_names:
-                arr = self._model[name]
-                values[name] = float(arr[iy, ix, iz])
-            for name, arr in self._model.classification.items():
-                values[name] = float(arr[iy, ix, iz])
-            self.probe_changed.emit(
-                float(self._model.x[ix]),
-                float(self._model.y[iy]),
-                float(self._model.z[iz]),
-                values,
-            )
+        m = self._model
+        if m:
+            ix = int(np.argmin(np.abs(m.x - x)))
+            iy = int(np.argmin(np.abs(m.y - y)))
+            iz = int(np.argmin(np.abs(m.z - z)))
+            vals = {}
+            for name in m.field_names:
+                vals[name] = float(m.fields[name][iy, ix, iz])
+            for name, arr in m.classification.items():
+                vals[name] = float(arr[iy, ix, iz])
+            self.probe_changed.emit(float(m.x[ix]), float(m.y[iy]), float(m.z[iz]), vals)
 
-    # ── helpers ─────────────────────────────────────────
-
-    def _numpy_to_vtk_image(self, arr: np.ndarray) -> vtk.vtkImageData:
-        """Convert 2D or 3D numpy array to vtkImageData."""
-        arr_flat = np.ascontiguousarray(arr.ravel(order="F"), dtype=np.float32)
-        vtk_data = vtk.vtkFloatArray()
-        vtk_data.SetVoidArray(arr_flat, len(arr_flat), 1)
-        vtk_data.SetNumberOfComponents(1)
-
-        img = vtk.vtkImageData()
-        if arr.ndim == 2:
-            img.SetDimensions(arr.shape[1], arr.shape[0], 1)
-        else:
-            img.SetDimensions(arr.shape[2], arr.shape[1], arr.shape[0])
-        img.GetPointData().SetScalars(vtk_data)
-        return img
-
-    def _create_image_actor(self, img: vtk.vtkImageData) -> vtk.vtkImageActor:
-        """Create a color-mapped vtkImageActor."""
-        vmin, vmax = self._field_range()
-
-        # Lookup table
-        lut = vtk.vtkLookupTable()
-        lut.SetNumberOfTableValues(256)
-        lut.SetRange(vmin, vmax)
-        lut.Build()
-
-        # Color from CTF → LUT
-        for i in range(256):
-            t = i / 255.0
-            r, g, b = self._ctf.GetColor(t)
-            lut.SetTableValue(i, r, g, b, 1.0)
-
-        # Map colors through lookup table
-        cmap = vtk.vtkImageMapToColors()
-        cmap.SetInputData(img)
-        cmap.SetLookupTable(lut)
-        cmap.SetOutputFormatToRGBA()
-        cmap.Update()
-
-        actor = vtk.vtkImageActor()
-        actor.GetMapper().SetInputConnection(cmap.GetOutputPort())
-        return actor
+    def _render(self):
+        self._update_lut_range()
+        self._vtk_widget.GetRenderWindow().Render()
