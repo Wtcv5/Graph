@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+**/venv/
+
+# Build metadata
+*.egg-info/
+build/
+dist/
+
+# Generated outputs
+outputs/*
+!outputs/.gitkeep
+*.nc
+**/preprocessed/*.nc
+**/preprocessed/*.json
+
+# Local tooling
+.DS_Store

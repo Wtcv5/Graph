@@ -1,0 +1,16 @@
+{
+  "name": "right_tunnel_exit_vpvs",
+  "description": "Dyk1252+411 right tunnel exit Vp/Vs dataset",
+  "data_dir": "出口右线Dyk1252+411-VpVs",
+  "vp_file": "出口右线Dyk1252+411-Vp.csv",
+  "vs_file": "出口右线Dyk1252+411-Vs.csv",
+  "output_dir": "outputs/right_tunnel_exit_vpvs",
+  "grid_step_m": 0.5,
+  "chunk_size": 500000,
+  "fill_kernel_size": 3,
+  "fill_max_iter": 5,
+  "title": "Tunnel Seismic Velocity Geological Model",
+  "source": "Dyk1252+411 Right Tunnel Exit VpVs",
+  "coordinate_system": "Local engineering coordinates (meters)",
+  "density_formula": "Gardner: rho = 0.31 * Vp^0.25 (g/cm3)"
+}

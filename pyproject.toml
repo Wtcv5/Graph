@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tunnel-velocity-model"
+version = "0.1.0"
+description = "Reproducible preprocessing pipeline for tunnel seismic velocity models."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy",
+  "pandas",
+  "scipy",
+  "xarray",
+  "h5netcdf",
+  "h5py",
+]
+
+[project.scripts]
+tunnel-velocity-model = "tunnel_velocity_model.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

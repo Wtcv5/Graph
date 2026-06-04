@@ -5,7 +5,12 @@
       "PowerShell(git remote *)",
       "PowerShell(git fetch *)",
       "PowerShell(git lfs *)",
-      "PowerShell(git add *)"
+      "PowerShell(git add *)",
+      "PowerShell(git commit *)",
+      "PowerShell(git push *)",
+      "PowerShell(git config *)",
+      "PowerShell(cmdkey *)",
+      "PowerShell($vp = \"出口右线Dyk1252+411-VpVs/出口右线Dyk1252+411-Vp.csv\"; $vs = \"出口右线Dyk1252+411-VpVs/出口右线Dyk1252+411-Vs.csv\"; Write-Output \"=== Vp.csv ===\"; Write-Output \"Lines: $\\(\\(Get-Content $vp | Measure-Object -Line\\).Lines\\)\"; Write-Output \"Size: $\\(\\(Get-Item $vp\\).Length\\) bytes\"; Write-Output \"First: $\\(Get-Content $vp -TotalCount 1\\)\"; Write-Output \"Last: $\\(Get-Content $vp -Tail 1\\)\"; Write-Output \"\"; Write-Output \"=== Vs.csv ===\"; Write-Output \"Lines: $\\(\\(Get-Content $vs | Measure-Object -Line\\).Lines\\)\"; Write-Output \"Size: $\\(\\(Get-Item $vs\\).Length\\) bytes\"; Write-Output \"First: $\\(Get-Content $vs -TotalCount 1\\)\"; Write-Output \"Last: $\\(Get-Content $vs -Tail 1\\)\")"
     ]
   }
 }
