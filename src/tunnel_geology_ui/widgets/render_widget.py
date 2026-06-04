@@ -53,6 +53,7 @@ class RenderWidget(QWidget):
         self._slice_y_actor: vtk.vtkImageActor | None = None
         self._slice_z_actor: vtk.vtkImageActor | None = None
         self._iso_actor: vtk.vtkActor | None = None
+        self._tunnel_actor: vtk.vtkActor | None = None
         self._axes_actor: vtk.vtkAxesActor | None = None
 
         # Color transfer function
@@ -99,6 +100,51 @@ class RenderWidget(QWidget):
 
     def reset_camera(self):
         self._renderer.ResetCamera()
+        self._vtk_widget.GetRenderWindow().Render()
+
+    def set_tunnel(self, tunnel: "ParametricTunnel | None"):
+        """Display or hide a tunnel 3D mesh overlay."""
+        if self._tunnel_actor:
+            self._renderer.RemoveActor(self._tunnel_actor)
+            self._tunnel_actor = None
+
+        if tunnel is None or tunnel.vertices is None or tunnel.faces is None:
+            self._vtk_widget.GetRenderWindow().Render()
+            return
+
+        # Convert numpy arrays to VTK polydata
+        verts = tunnel.vertices  # (N, 3)
+        faces = tunnel.faces      # (M, 3)
+
+        vtk_points = vtk.vtkPoints()
+        vtk_points.SetData(vtk.vtkFloatArray())
+        for i, v in enumerate(verts):
+            vtk_points.InsertNextPoint(v[0], v[1], v[2])
+
+        vtk_cells = vtk.vtkCellArray()
+        for f in faces:
+            triangle = vtk.vtkTriangle()
+            triangle.GetPointIds().SetId(0, int(f[0]))
+            triangle.GetPointIds().SetId(1, int(f[1]))
+            triangle.GetPointIds().SetId(2, int(f[2]))
+            vtk_cells.InsertNextCell(triangle)
+
+        polydata = vtk.vtkPolyData()
+        polydata.SetPoints(vtk_points)
+        polydata.SetPolys(vtk_cells)
+
+        mapper = vtk.vtkPolyDataMapper()
+        mapper.SetInputData(polydata)
+
+        self._tunnel_actor = vtk.vtkActor()
+        self._tunnel_actor.SetMapper(mapper)
+        self._tunnel_actor.GetProperty().SetColor(0.85, 0.65, 0.4)
+        self._tunnel_actor.GetProperty().SetOpacity(0.7)
+        self._tunnel_actor.GetProperty().SetEdgeVisibility(True)
+        self._tunnel_actor.GetProperty().SetEdgeColor(0.3, 0.3, 0.3)
+        self._tunnel_actor.GetProperty().SetLineWidth(0.5)
+
+        self._renderer.AddActor(self._tunnel_actor)
         self._vtk_widget.GetRenderWindow().Render()
 
     def set_view(self, direction: str):

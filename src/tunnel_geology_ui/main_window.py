@@ -18,6 +18,7 @@ from PySide6.QtCore import Qt
 from .panels.data_panel import DataPanel
 from .panels.property_panel import PropertyPanel
 from .panels.slice_panel import SlicePanel
+from .panels.tunnel_panel import TunnelPanel
 from .panels.info_panel import InfoPanel
 from .dialogs.import_dialog import ImportDialog
 from .dialogs.export_dialog import ExportDialog
@@ -46,14 +47,18 @@ class MainWindow(QMainWindow):
 
         self._property_panel = PropertyPanel()
         self._slice_panel = SlicePanel()
+        self._tunnel_panel = TunnelPanel()
         self._info_panel = InfoPanel()
 
         # ── Signal wiring ──
         self._render.probe_changed.connect(self._on_probe)
         self._slice_panel.slice_moved.connect(self._on_slice_moved)
+        self._tunnel_panel.tunnel_built.connect(self._on_tunnel_built)
+        self._tunnel_panel.coupling_computed.connect(self._on_coupling_computed)
 
         # ── Dock widgets ──
         self._add_dock(self._data_panel, "📁 Data", Qt.DockWidgetArea.LeftDockWidgetArea)
+        self._add_dock(self._tunnel_panel, "🚇 Tunnel", Qt.DockWidgetArea.LeftDockWidgetArea)
         self._add_dock(self._property_panel, "📊 Properties", Qt.DockWidgetArea.RightDockWidgetArea)
         self._add_dock(self._slice_panel, "✂️ Slices", Qt.DockWidgetArea.RightDockWidgetArea)
         self._add_dock(self._info_panel, "📋 Log", Qt.DockWidgetArea.BottomDockWidgetArea)
@@ -118,6 +123,7 @@ class MainWindow(QMainWindow):
             self._data_panel.set_model(self._model)
             self._property_panel.set_model(self._model, self._current_field)
             self._slice_panel.set_model(self._model)
+            self._tunnel_panel.set_model(self._model)
             self._info_panel.log(f"Loaded: {self._model.summary()}")
             self._status.showMessage(f"Loaded {path.name} — {self._model.nx}x{self._model.ny}x{self._model.nz}")
         except Exception as e:
@@ -138,6 +144,13 @@ class MainWindow(QMainWindow):
 
     def _on_slice_moved(self, axis: str, index: int):
         self._render.set_slice(axis, index)
+
+    def _on_tunnel_built(self, tunnel):
+        self._render.set_tunnel(tunnel)
+        self._info_panel.log(f"Tunnel built: {tunnel.summary()}")
+
+    def _on_coupling_computed(self, coupling):
+        self._info_panel.log(f"Coupling computed: {coupling.summary().split(chr(10))[0]}")
 
     def _import_csv(self):
         dialog = ImportDialog(self)

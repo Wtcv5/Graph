@@ -21,6 +21,13 @@ from .statistics import (
     anomaly_detection,
     correlation_map,
 )
+from .tunnel import (
+    ParametricTunnel,
+    TunnelAlignment,
+    TunnelSection,
+    SectionShape,
+)
+from .coupling import TunnelGeologyCoupling
 
 __all__ = [
     "GeologicalModel",
@@ -42,4 +49,9 @@ __all__ = [
     "depth_profile",
     "anomaly_detection",
     "correlation_map",
+    "ParametricTunnel",
+    "TunnelAlignment",
+    "TunnelSection",
+    "SectionShape",
+    "TunnelGeologyCoupling",
 ]
