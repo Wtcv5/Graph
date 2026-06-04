@@ -15,7 +15,13 @@ dependencies = [
   "xarray",
   "h5netcdf",
   "h5py",
+  "pyvista>=0.43",
+  "scikit-image",
+  "matplotlib>=3.8",
 ]
+
+[project.optional-dependencies]
+gui = ["pyside6>=6.6", "matplotlib>=3.8"]
 
 [project.scripts]
 tunnel-velocity-model = "tunnel_velocity_model.cli:main"
