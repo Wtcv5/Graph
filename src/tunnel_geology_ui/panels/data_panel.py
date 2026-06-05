@@ -74,6 +74,11 @@ class DataPanel(QWidget):
         if model.field_names:
             self._field_list.setCurrentRow(0)
 
+    def set_busy(self, busy: bool):
+        self._load_btn.setEnabled(not busy)
+        self._field_list.setEnabled(not busy)
+        self._class_list.setEnabled(not busy)
+
     def _open_file(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Open NetCDF Dataset", "",

@@ -82,6 +82,28 @@ class TestGeologicalModel(unittest.TestCase):
         sub = self.model.subset_z(2902, 2907)
         self.assertLess(sub.nz, self.model.nz)
 
+    def test_validation_rejects_wrong_shape(self):
+        with self.assertRaises(ValueError):
+            GeologicalModel(
+                x=np.linspace(0, 10, 10),
+                y=np.linspace(0, 5, 5),
+                z=np.linspace(0, 3, 3),
+                fields={"Bad": np.zeros((4, 4, 4), dtype=np.float32)},
+            )
+
+    def test_validation_accepts_correct_shape(self):
+        # Should not raise
+        GeologicalModel(
+            x=np.linspace(0, 10, 10),
+            y=np.linspace(0, 5, 5),
+            z=np.linspace(0, 3, 3),
+            fields={"Ok": np.zeros((5, 10, 3), dtype=np.float32)},
+        )
+
+    def test_field_raises_keyerror_for_missing(self):
+        with self.assertRaises(KeyError):
+            self.model.field("NonexistentField")
+
 
 if __name__ == "__main__":
     unittest.main()

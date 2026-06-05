@@ -4,6 +4,7 @@ scipy
 xarray
 h5netcdf
 h5py
+pyside6
 pyvista
 scikit-image
 matplotlib

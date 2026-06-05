@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QPushButton, QDoubleSpinBox,
 )
 from PySide6.QtCore import Signal, Qt
+import numpy as np
 
 
 class SlicePanel(QWidget):
@@ -68,6 +69,24 @@ class SlicePanel(QWidget):
         vmin, vmax = float(arr.min()), float(arr.max())
         self._iso_value.setRange(vmin, vmax)
         self._iso_value.setValue(vmin + 0.7 * (vmax - vmin))
+
+    def set_field_range(self, field_name: str, data_3d):
+        finite = np.asarray(data_3d)[np.isfinite(data_3d)]
+        if finite.size == 0:
+            return
+        vmin = float(finite.min())
+        vmax = float(finite.max())
+        self._iso_value.setRange(vmin, vmax)
+        if self._iso_value.value() < vmin or self._iso_value.value() > vmax:
+            self._iso_value.setValue(vmin + 0.7 * (vmax - vmin))
+        self._iso_value.setToolTip(f"{field_name} range: {vmin:.3f} to {vmax:.3f}")
+
+    def set_busy(self, busy: bool):
+        for config in (self._x_slider, self._y_slider, self._z_slider):
+            config["slider"].setEnabled(not busy)
+        self._iso_value.setEnabled(not busy)
+        self._iso_build_btn.setEnabled(not busy)
+        self._iso_clear_btn.setEnabled(not busy)
 
     def _make_slider_box(self, title: str, axis: str) -> dict:
         group = QGroupBox(title)

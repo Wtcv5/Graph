@@ -81,6 +81,36 @@ class TestParametricTunnel(unittest.TestCase):
         self.assertIn("ParametricTunnel", s)
 
 
+class TestTunnelValidation(unittest.TestCase):
+    def test_section_rejects_negative_width(self):
+        with self.assertRaises(ValueError):
+            TunnelSection(width=-1)
+
+    def test_section_rejects_negative_height(self):
+        with self.assertRaises(ValueError):
+            TunnelSection(height=0)
+
+    def test_section_rejects_too_few_vertices(self):
+        with self.assertRaises(ValueError):
+            TunnelSection(n_vertices=4)
+
+    def test_alignment_rejects_non_monotonic_chainage(self):
+        with self.assertRaises(ValueError):
+            TunnelAlignment(control_points=np.array([
+                [0, 0, 0, 0],
+                [10, 10, 0, 0],
+                [5, 20, 0, 0],   # decreasing chainage
+            ]))
+
+    def test_alignment_rejects_insufficient_points(self):
+        with self.assertRaises(ValueError):
+            TunnelAlignment(control_points=np.array([[0, 0, 0, 0]]))
+
+    def test_alignment_rejects_wrong_shape(self):
+        with self.assertRaises(ValueError):
+            TunnelAlignment(control_points=np.array([[0, 0, 0]]))
+
+
 class TestTunnelCoupling(unittest.TestCase):
     def setUp(self):
         # Create a simple geological model

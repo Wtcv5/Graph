@@ -160,14 +160,29 @@ class TunnelGeologyCoupling:
             seg_end = min(seg_start + segment_length, ch_end)
             mask = (ch >= seg_start) & (ch <= seg_end)
 
-            seg = {"chainage_start": round(seg_start, 1), "chainage_end": round(seg_end, 1)}
+            seg = {
+                "chainage_start": round(seg_start, 1),
+                "chainage_end": round(seg_end, 1),
+                "has_data": False,
+            }
             for name in self.field_names:
                 if name in profile:
-                    seg[f"mean_{name}"] = float(np.nanmean(profile[name][mask]))
+                    values = profile[name][mask]
+                    if np.isfinite(values).any():
+                        seg[f"mean_{name}"] = float(np.nanmean(values))
+                        seg["has_data"] = True
+                    else:
+                        seg[f"mean_{name}"] = np.nan
             if "BQ" in profile:
-                bq_mean = float(np.nanmean(profile["BQ"][mask]))
-                seg["mean_BQ"] = bq_mean
-                seg["BQ_class"] = _bq_to_class(bq_mean)
+                bq_values = profile["BQ"][mask]
+                if np.isfinite(bq_values).any():
+                    bq_mean = float(np.nanmean(bq_values))
+                    seg["mean_BQ"] = bq_mean
+                    seg["BQ_class"] = _bq_to_class(bq_mean)
+                    seg["has_data"] = True
+                else:
+                    seg["mean_BQ"] = np.nan
+                    seg["BQ_class"] = None
             segments.append(seg)
             seg_start = seg_end
 

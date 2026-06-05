@@ -38,6 +38,22 @@ class TunnelSection:
     # ── discretization ──
     n_vertices: int = 64         # vertices around the perimeter
 
+    def __post_init__(self):
+        if self.width <= 0:
+            raise ValueError(f"width must be positive, got {self.width}")
+        if self.height <= 0:
+            raise ValueError(f"height must be positive, got {self.height}")
+        if self.invert_radius <= 0:
+            raise ValueError(f"invert_radius must be positive, got {self.invert_radius}")
+        if self.arch_radius <= 0:
+            raise ValueError(f"arch_radius must be positive, got {self.arch_radius}")
+        if self.n_vertices < 8:
+            raise ValueError(f"n_vertices must be >= 8, got {self.n_vertices}")
+        if self.shotcrete_thickness < 0:
+            raise ValueError(f"shotcrete_thickness must be >= 0, got {self.shotcrete_thickness}")
+        if self.lining_thickness < 0:
+            raise ValueError(f"lining_thickness must be >= 0, got {self.lining_thickness}")
+
     def generate_profile(self, include_layers: bool = False) -> list[np.ndarray]:
         """Generate 2D perimeter vertices (ny, nz) for this section.
 
@@ -179,6 +195,20 @@ class TunnelAlignment:
 
     # Chainage array for fine sampling
     n_samples: int = 200
+
+    def __post_init__(self):
+        if self.control_points.ndim != 2 or self.control_points.shape[1] != 4:
+            raise ValueError(
+                f"control_points must be (N, 4), got {self.control_points.shape}"
+            )
+        if len(self.control_points) < 2:
+            raise ValueError("Need at least 2 control points")
+        if self.n_samples < 3:
+            raise ValueError(f"n_samples must be >= 3, got {self.n_samples}")
+        # Ensure chainage is monotonic
+        ch = self.control_points[:, 0]
+        if not np.all(np.diff(ch) > 0):
+            raise ValueError("Chainage must be strictly increasing")
 
     @classmethod
     def from_endpoints(

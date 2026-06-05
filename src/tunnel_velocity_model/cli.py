@@ -42,6 +42,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Validate an explicit NetCDF file instead of the configured output path.",
     )
 
+    gui_parser = subparsers.add_parser("gui", help="Launch the Qt-based geological model viewer.")
+    gui_parser.add_argument(
+        "--project-root",
+        type=Path,
+        default=Path("."),
+        help="Repository root used to resolve relative dataset paths.",
+    )
+    gui_parser.add_argument(
+        "data",
+        nargs="?",
+        type=Path,
+        help="Optional path to a NetCDF dataset to open on startup.",
+    )
+
     return parser
 
 
@@ -78,13 +92,14 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = build_parser()
     args = parser.parse_args(argv)
-    config = resolve_config(args)
 
     if args.command == "preprocess":
+        config = resolve_config(args)
         preprocess_dataset(config, force=args.force)
         return 0
 
     if args.command == "validate":
+        config = resolve_config(args)
         nc_path = args.nc_path
         if nc_path is None:
             nc_path = config.output_nc_path
@@ -93,6 +108,23 @@ def main(argv: list[str] | None = None) -> int:
 
         validate_dataset(nc_path)
         return 0
+
+    if args.command == "gui":
+        data_path = args.data
+        if data_path is not None and not data_path.is_absolute():
+            data_path = (args.project_root.resolve() / data_path).resolve()
+
+        try:
+            from tunnel_geology_ui import run_gui
+        except ModuleNotFoundError as exc:
+            if exc.name == "PySide6":
+                parser.error(
+                    "GUI dependencies are missing. Install them with "
+                    "`python -m pip install -r requirements.txt` and retry."
+                )
+            raise
+
+        return int(run_gui(data_path))
 
     parser.error(f"Unsupported command: {args.command}")
     return 2

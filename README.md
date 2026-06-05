@@ -75,6 +75,16 @@ Validate the generated NetCDF:
 .\.venv\Scripts\python scripts\validate.py
 ```
 
+## Run The GUI
+
+The default dependency install now includes the GUI stack.
+See [docs/GUI_QUICKSTART.md](/d:/BaiduNetdiskDownload/Graph/docs/GUI_QUICKSTART.md:1) for the tested launch paths.
+
+```powershell
+.\.venv\Scripts\python scripts\run_gui.py
+.\.venv\Scripts\python scripts\run_gui.py outputs/right_tunnel_exit_vpvs/geological_model.nc
+```
+
 ## Alternative Entrypoints
 
 If you install the package in editable mode:
@@ -83,6 +93,8 @@ If you install the package in editable mode:
 .\.venv\Scripts\python -m pip install -e .
 .\.venv\Scripts\tunnel-velocity-model preprocess --force
 .\.venv\Scripts\tunnel-velocity-model validate
+.\.venv\Scripts\tunnel-velocity-model gui
+.\.venv\Scripts\tunnel-velocity-model gui outputs/right_tunnel_exit_vpvs/geological_model.nc
 ```
 
 Legacy wrappers remain available for compatibility:

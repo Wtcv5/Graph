@@ -13,6 +13,7 @@ from PySide6.QtCore import Signal
 class TunnelPanel(QWidget):
     tunnel_built = Signal(object)   # ParametricTunnel
     coupling_computed = Signal(object)  # TunnelGeologyCoupling
+    coupling_requested = Signal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -121,6 +122,10 @@ class TunnelPanel(QWidget):
     def set_model(self, model):
         self._model = model
         self._build_btn.setEnabled(model is not None)
+        self._couple_btn.setEnabled(False)
+        self._tunnel = None
+        self._coupling = None
+        self._result_text.clear()
 
         # Auto-configure defaults from model
         if model:
@@ -128,8 +133,79 @@ class TunnelPanel(QWidget):
             self._z_start.setValue(model.z_range[0] +
                                    0.5 * (model.z_range[1] - model.z_range[0]))
 
+    def set_busy(self, busy: bool, message: str | None = None):
+        parameter_controls = [
+            self._x_start,
+            self._y_start,
+            self._z_start,
+            self._length,
+            self._gradient,
+            self._shape,
+            self._width,
+            self._height,
+            self._shotcrete,
+            self._lining,
+        ]
+        for control in parameter_controls:
+            control.setEnabled(not busy)
+
+        if busy:
+            self._build_btn.setEnabled(False)
+            self._couple_btn.setEnabled(False)
+        else:
+            self._build_btn.setEnabled(self._model is not None)
+            self._couple_btn.setEnabled(self._tunnel is not None)
+
+        if busy and message:
+            self._result_text.setText(message)
+
+    def set_coupling_result(self, coupling, segments: list[dict], warnings: list[str] | None = None):
+        self._coupling = coupling
+        lines = [self._coupling.summary(), "", "--- Chainage Segments ---"]
+        for seg in segments:
+            if not seg.get("has_data", False):
+                lines.append(
+                    f"  [{seg['chainage_start']:.0f}-{seg['chainage_end']:.0f}m] "
+                    f"No geological data sampled"
+                )
+                continue
+
+            cls_value = seg.get("BQ_class")
+            cls_label = {1: "I", 2: "II", 3: "III", 4: "IV", 5: "V"}.get(cls_value, "?")
+            lines.append(
+                f"  [{seg['chainage_start']:.0f}-{seg['chainage_end']:.0f}m] "
+                f"BQ={seg.get('mean_BQ', float('nan')):.0f} ({cls_label})  "
+                f"Vp={seg.get('mean_Vp', float('nan')):.0f}"
+            )
+
+        if warnings:
+            lines.extend(["", "--- Warnings ---", *[f"  - {warning}" for warning in warnings]])
+
+        self._result_text.setText("\n".join(lines))
+        self.coupling_computed.emit(self._coupling)
+
+    def _validate_alignment_inputs(self) -> str | None:
+        if self._model is None:
+            return "Load a geological model before building a tunnel."
+
+        x_end = self._x_start.value() + self._length.value()
+        if not (self._model.x_range[0] <= self._x_start.value() <= self._model.x_range[1]):
+            return "Tunnel start X is outside the loaded model extent."
+        if not (self._model.x_range[0] <= x_end <= self._model.x_range[1]):
+            return "Tunnel end X is outside the loaded model extent. Reduce length or move the start point."
+        if not (self._model.y_range[0] <= self._y_start.value() <= self._model.y_range[1]):
+            return "Tunnel Y is outside the loaded model extent."
+        if not (self._model.z_range[0] <= self._z_start.value() <= self._model.z_range[1]):
+            return "Tunnel Z is outside the loaded model extent."
+        return None
+
     def _build_tunnel(self):
         if self._model is None:
+            return
+
+        validation_error = self._validate_alignment_inputs()
+        if validation_error:
+            QMessageBox.warning(self, "Invalid Tunnel Parameters", validation_error)
             return
 
         try:
@@ -176,33 +252,4 @@ class TunnelPanel(QWidget):
     def _compute_coupling(self):
         if self._tunnel is None or self._model is None:
             return
-
-        try:
-            from tunnel_geology_model.coupling import TunnelGeologyCoupling
-
-            self._coupling = TunnelGeologyCoupling(
-                tunnel=self._tunnel,
-                model=self._model,
-                field_names=["Vp", "Vs", "Density", "Young_Modulus"],
-            )
-            stats = self._coupling.vertex_statistics()
-            profile = self._coupling.compute_centerline_profile()
-            segments = self._coupling.classify_chainage_segments(segment_length=20.0)
-
-            # Build result text
-            lines = [self._coupling.summary(), "", "--- Chainage Segments ---"]
-            for seg in segments:
-                cls_label = {1: "I", 2: "II", 3: "III", 4: "IV", 5: "V"}.get(
-                    seg.get("BQ_class", 0), "?"
-                )
-                lines.append(
-                    f"  [{seg['chainage_start']:.0f}-{seg['chainage_end']:.0f}m] "
-                    f"BQ={seg.get('mean_BQ', 0):.0f} ({cls_label})  "
-                    f"Vp={seg.get('mean_Vp', 0):.0f}"
-                )
-
-            self._result_text.setText("\n".join(lines))
-            self.coupling_computed.emit(self._coupling)
-
-        except Exception as e:
-            QMessageBox.critical(self, "Coupling Error", str(e))
+        self.coupling_requested.emit(self._tunnel)

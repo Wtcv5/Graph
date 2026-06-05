@@ -87,6 +87,20 @@ class RenderWidget(QWidget):
         if self._model:
             self._update_slices()
 
+    def set_isosurface_mesh(self, vertices: np.ndarray, faces: np.ndarray):
+        if self._iso_actor:
+            self._renderer.RemoveActor(self._iso_actor)
+            self._iso_actor = None
+        self._iso_actor = self._build_poly_actor(
+            vertices,
+            faces,
+            color=(1.0, 0.8, 0.3),
+            opacity=0.6,
+            edge_visible=False,
+        )
+        self._renderer.AddActor(self._iso_actor)
+        self._render()
+
     def set_slice(self, axis: str, index: int):
         if axis == "x":
             self._slice_x_idx = index
@@ -239,7 +253,7 @@ class RenderWidget(QWidget):
 
     def _build_slice(self, axis: str, idx: int) -> vtk.vtkImageActor:
         m = self._model
-        arr = m.field(self._current_field)
+        arr = np.asarray(m[self._current_field])
 
         if axis == "x":
             idx = min(idx, m.nx - 1)

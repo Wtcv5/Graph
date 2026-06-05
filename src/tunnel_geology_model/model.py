@@ -39,6 +39,36 @@ class GeologicalModel:
     masks: dict[str, np.ndarray] = field(default_factory=dict)
     classification: dict[str, np.ndarray] = field(default_factory=dict)
 
+    def __post_init__(self):
+        """Validate field shapes against coordinate dimensions."""
+        shape = (len(self.y), len(self.x), len(self.z))
+        for name, arr in self.fields.items():
+            if arr.shape != shape:
+                raise ValueError(
+                    f"Field '{name}' shape {arr.shape} does not match "
+                    f"grid shape {shape} (ny, nx, nz)"
+                )
+        for name, arr in self.masks.items():
+            if arr.shape != shape:
+                raise ValueError(
+                    f"Mask '{name}' shape {arr.shape} does not match grid shape {shape}"
+                )
+        for name, arr in self.classification.items():
+            if arr.shape != shape:
+                raise ValueError(
+                    f"Classification '{name}' shape {arr.shape} does not match "
+                    f"grid shape {shape}"
+                )
+
+    def _validate_field_name(self, name: str) -> None:
+        """Raise KeyError with helpful message if field not found."""
+        if name in self.fields:
+            return
+        available = list(self.fields) + list(self.masks) + list(self.classification)
+        raise KeyError(
+            f"'{name}' not found. Available: {available}"
+        )
+
     # ── properties ──────────────────────────────────────────
 
     @property
@@ -96,10 +126,8 @@ class GeologicalModel:
 
     def field(self, name: str) -> np.ndarray:
         """Return field array, guaranteed."""
-        arr = self.fields.get(name)
-        if arr is None:
-            raise KeyError(f"Field '{name}' not found. Available: {list(self.fields)}")
-        return arr
+        self._validate_field_name(name)
+        return self.fields[name]
 
     # ── basic stats ─────────────────────────────────────────
 
